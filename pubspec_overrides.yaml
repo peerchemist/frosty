@@ -1,0 +1,11 @@
+dependency_overrides:
+  coinlib:
+    git:
+      url: https://github.com/peerchemist/coinlib.git
+      ref: dart-3.13
+      path: coinlib
+  coinlib_flutter:
+    git:
+      url: https://github.com/peerchemist/coinlib.git
+      ref: dart-3.13
+      path: coinlib_flutter
