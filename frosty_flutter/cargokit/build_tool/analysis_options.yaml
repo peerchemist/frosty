@@ -22,6 +22,12 @@ linter:
   rules:
     - prefer_relative_imports
     - directives_ordering
+    - empty_container_bodies
+    - initialize_in_field_declaration
+    - unnecessary_const_in_enum_constructor
+    - unnecessary_primary_constructor_body
+    - unnecessary_type_name_in_constructor
+    - use_declaring_parameters
 
 # analyzer:
 #   exclude:

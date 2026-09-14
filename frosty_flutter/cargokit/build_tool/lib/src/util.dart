@@ -1,5 +1,6 @@
 /// This is copied from Cargokit (which is the official way to use it currently)
 /// Details: https://fzyzcjy.github.io/flutter_rust_bridge/manual/integrate/builtin
+library;
 
 import 'dart:convert';
 import 'dart:io';
@@ -17,7 +18,7 @@ class CommandFailedException implements Exception {
   final List<String> arguments;
   final ProcessResult result;
 
-  CommandFailedException({
+  new({
     required this.executable,
     required this.arguments,
     required this.result,
@@ -50,7 +51,7 @@ class TestRunCommandArgs {
   final Encoding? stdoutEncoding;
   final Encoding? stderrEncoding;
 
-  TestRunCommandArgs({
+  new({
     required this.executable,
     required this.arguments,
     this.workingDirectory,
@@ -63,12 +64,7 @@ class TestRunCommandArgs {
 }
 
 class TestRunCommandResult {
-  TestRunCommandResult({
-    this.pid = 1,
-    this.exitCode = 0,
-    this.stdout = '',
-    this.stderr = '',
-  });
+  new({this.pid = 1, this.exitCode = 0, this.stdout = '', this.stderr = ''});
 
   final int pid;
   final int exitCode;
@@ -89,16 +85,18 @@ ProcessResult runCommand(
   Encoding? stderrEncoding = systemEncoding,
 }) {
   if (testRunCommandOverride != null) {
-    final result = testRunCommandOverride!(TestRunCommandArgs(
-      executable: executable,
-      arguments: arguments,
-      workingDirectory: workingDirectory,
-      environment: environment,
-      includeParentEnvironment: includeParentEnvironment,
-      runInShell: runInShell,
-      stdoutEncoding: stdoutEncoding,
-      stderrEncoding: stderrEncoding,
-    ));
+    final result = testRunCommandOverride!(
+      TestRunCommandArgs(
+        executable: executable,
+        arguments: arguments,
+        workingDirectory: workingDirectory,
+        environment: environment,
+        includeParentEnvironment: includeParentEnvironment,
+        runInShell: runInShell,
+        stdoutEncoding: stdoutEncoding,
+        stderrEncoding: stderrEncoding,
+      ),
+    );
     return ProcessResult(
       result.pid,
       result.exitCode,

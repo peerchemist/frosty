@@ -1,3 +1,10 @@
+## Unreleased
+
+- Require Dart 3.13 and Flutter 3.47.
+- Update Dart, Rust, Android, and Cargokit dependencies.
+- Update FROST to 3.0 and regenerate native and WebAssembly bindings.
+- Adopt primary and concise constructor syntax.
+
 ## 4.0.1
 
 Fix Android build

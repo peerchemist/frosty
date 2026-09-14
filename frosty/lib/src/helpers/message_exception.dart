@@ -1,7 +1,5 @@
 /// Exception with a message given by [toString].
-class MessageException implements Exception {
-  final String message;
-  MessageException(this.message);
+class MessageException(final String message) implements Exception {
   @override
   String toString() => "$runtimeType: $message";
 }

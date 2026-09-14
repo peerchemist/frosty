@@ -5,9 +5,7 @@ void main() {
   runApp(const MyApp());
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
-
+class const MyApp({super.key}) extends StatelessWidget {
   @override
   Widget build(BuildContext context) => MaterialApp(
     home: Scaffold(
@@ -15,16 +13,16 @@ class MyApp extends StatelessWidget {
       body: SingleChildScrollView(
         child: Padding(
           padding: const EdgeInsets.all(10),
-          child: _getWidget(context)
-        )
-      )
-    )
+          child: _getWidget(context),
+        ),
+      ),
+    ),
   );
 
   Widget _getWidget(BuildContext context) => frosty.FrostyLoader(
     loadChild: const Text("Loading frosty..."),
     errorBuilder: (context, error) => Text("Error $error"),
-    builder: (context) => Text("Identifier for 1 = ${frosty.Identifier.fromUint16(1)}"),
+    builder: (context) =>
+        Text("Identifier for 1 = ${frosty.Identifier.fromUint16(1)}"),
   );
-
 }

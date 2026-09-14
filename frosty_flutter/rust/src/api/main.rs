@@ -1,16 +1,15 @@
-use frost_secp256k1_tr::keys::Tweak;
-pub use frost_secp256k1_tr as frost;
-pub use frost_core;
-pub use frost_secp256k1_tr::keys::dkg as dkg;
-use rand::thread_rng;
-use anyhow::{anyhow, Result};
-use crate::frb_generated::{RustOpaque, RustAutoOpaque};
-use std::collections::BTreeMap;
-use flutter_rust_bridge::frb;
+use crate::frb_generated::{RustAutoOpaque, RustOpaque};
 use aes_gcm::{
-    aead::{Aead, AeadCore, KeyInit, OsRng},
-    Aes256Gcm, Key,
+    aead::{Aead, Generate, KeyInit},
+    Aes256Gcm, Key, Nonce,
 };
+use anyhow::{anyhow, Result};
+use flutter_rust_bridge::frb;
+pub use frost_core;
+pub use frost_secp256k1_tr as frost;
+pub use frost_secp256k1_tr::keys::dkg;
+use frost_secp256k1_tr::keys::Tweak;
+use std::collections::BTreeMap;
 
 // Common
 
@@ -18,38 +17,31 @@ fn from_bytes<T: Sized, DFunc, SFunc>(
     bytes: Vec<u8>,
     deserialize: DFunc,
     serialize: SFunc,
-    obj_name: &str
+    obj_name: &str,
 ) -> Result<T>
 where
     DFunc: FnOnce(&[u8]) -> Result<T, frost::Error>,
-    SFunc: FnOnce(&T) -> Result<Vec<u8>, frost::Error> {
-
-    let obj = deserialize(&bytes)
-        .map_err(|_| anyhow!("Could not deserialize {}", obj_name))?;
-    let expected_bytes = serialize(&obj)
-        .map_err(|_| anyhow!("Could not serialize {}", obj_name))?;
+    SFunc: FnOnce(&T) -> Result<Vec<u8>, frost::Error>,
+{
+    let obj = deserialize(&bytes).map_err(|_| anyhow!("Could not deserialize {}", obj_name))?;
+    let expected_bytes =
+        serialize(&obj).map_err(|_| anyhow!("Could not serialize {}", obj_name))?;
 
     if bytes != expected_bytes {
         return Err(anyhow!(
-            "{} bytes do not serialise into the same bytes", obj_name
+            "{} bytes do not serialise into the same bytes",
+            obj_name
         ));
     }
 
     Ok(obj)
-
 }
 
-fn vec_to_array<const N: usize, T>(
-    vec: Vec<T>,
-    name: &str
-) -> Result<[T; N]> {
-    <[T; N]>::try_from(vec)
-    .map_err(|_| anyhow!("{} should have {} bytes", name, N))
+fn vec_to_array<const N: usize, T>(vec: Vec<T>, name: &str) -> Result<[T; N]> {
+    <[T; N]>::try_from(vec).map_err(|_| anyhow!("{} should have {} bytes", name, N))
 }
 
-fn vector_to_signing_share(
-    vec: Vec<u8>
-) -> Result<frost::keys::SigningShare> {
+fn vector_to_signing_share(vec: Vec<u8>) -> Result<frost::keys::SigningShare> {
     frost::keys::SigningShare::deserialize(vec.as_slice())
         .map_err(|_| anyhow!("Could not deserialize private share"))
 }
@@ -59,12 +51,15 @@ fn construct_signing_package(
     message: Vec<u8>,
 ) -> frost::SigningPackage {
     frost::SigningPackage::new(
-        nonce_commitments.into_iter().map(
-            |v| (
-                v.identifier.blocking_read().0.clone(),
-                (*v.commitment).clone()
-            )
-        ).collect(),
+        nonce_commitments
+            .into_iter()
+            .map(|v| {
+                (
+                    v.identifier.blocking_read().0.clone(),
+                    (*v.commitment).clone(),
+                )
+            })
+            .collect(),
         &message,
     )
 }
@@ -126,42 +121,30 @@ pub fn dkg_part_1(
     max_signers: u16,
     min_signers: u16,
 ) -> DkgPart1Result {
-
-    let mut rng = thread_rng();
+    let mut rng = frost::rand_core::OsRng;
 
     Ok(
-        dkg::part1(
-            identifier.0.clone(),
-            max_signers,
-            min_signers,
-            &mut rng,
-        )
-        .map(|result| (
-            DkgRound1SecretOpaque(result.0),
-            DkgPublicCommitmentOpaque(result.1)
-        ))?
+        dkg::part1(identifier.0.clone(), max_signers, min_signers, &mut rng).map(|result| {
+            (
+                DkgRound1SecretOpaque(result.0),
+                DkgPublicCommitmentOpaque(result.1),
+            )
+        })?,
     )
-
 }
 
 #[frb(sync)]
-pub fn public_commitment_from_bytes(
-    bytes: Vec<u8>
-) -> Result<DkgPublicCommitmentOpaque> {
-    Ok(DkgPublicCommitmentOpaque(
-        from_bytes(
-            bytes,
-            |b| dkg::round1::Package::deserialize(&b),
-            |obj| obj.serialize(),
-            "Public commitment"
-        )?
-    ))
+pub fn public_commitment_from_bytes(bytes: Vec<u8>) -> Result<DkgPublicCommitmentOpaque> {
+    Ok(DkgPublicCommitmentOpaque(from_bytes(
+        bytes,
+        |b| dkg::round1::Package::deserialize(&b),
+        |obj| obj.serialize(),
+        "Public commitment",
+    )?))
 }
 
 #[frb(sync)]
-pub fn public_commitment_to_bytes(
-    commitment: &DkgPublicCommitmentOpaque
-) -> Result<Vec<u8>> {
+pub fn public_commitment_to_bytes(commitment: &DkgPublicCommitmentOpaque) -> Result<Vec<u8>> {
     Ok(commitment.0.serialize()?)
 }
 
@@ -181,7 +164,7 @@ impl DkgCommitmentForIdentifier {
     ) -> Self {
         Self {
             identifier: RustAutoOpaque::new(identifier.clone()),
-            commitment: RustAutoOpaque::new(commitment.clone())
+            commitment: RustAutoOpaque::new(commitment.clone()),
         }
     }
 }
@@ -200,22 +183,21 @@ pub struct DkgRound2IdentifierAndShare {
 
 impl DkgRound2IdentifierAndShare {
     #[frb(sync)]
-    pub fn from_refs(
-        identifier: &IdentifierOpaque,
-        secret: &DkgShareToGiveOpaque,
-    ) -> Self {
+    pub fn from_refs(identifier: &IdentifierOpaque, secret: &DkgShareToGiveOpaque) -> Self {
         Self {
             identifier: RustAutoOpaque::new(identifier.clone()),
-            secret: RustAutoOpaque::new(secret.clone())
+            secret: RustAutoOpaque::new(secret.clone()),
         }
     }
 }
 
 #[frb(non_opaque)]
 pub enum DkgRound2Error {
-    General { message: String },
+    General {
+        message: String,
+    },
     InvalidProofOfKnowledge {
-        culprit: RustAutoOpaque<IdentifierOpaque>
+        culprit: RustAutoOpaque<IdentifierOpaque>,
     },
 }
 
@@ -226,64 +208,54 @@ pub fn dkg_part_2(
     round_1_secret: &DkgRound1SecretOpaque,
     round_1_commitments: Vec<DkgCommitmentForIdentifier>,
 ) -> Result<DkgRound2Data, DkgRound2Error> {
-
     // Convert vector into hashmap
-    let commitment_map = round_1_commitments.into_iter().map(
-        |v| (
-            v.identifier.blocking_read().0.clone(),
-            v.commitment.blocking_read().0.clone(),
-        )
-    ).collect();
+    let commitment_map = round_1_commitments
+        .into_iter()
+        .map(|v| {
+            (
+                v.identifier.blocking_read().0.clone(),
+                v.commitment.blocking_read().0.clone(),
+            )
+        })
+        .collect();
 
-    let result = dkg::part2(
-        round_1_secret.0.clone(),
-        &commitment_map
-    ).map_err(
-        |e| match e {
-            frost::Error::InvalidProofOfKnowledge {
-                culprit: identifier
-            } => DkgRound2Error::InvalidProofOfKnowledge {
-                culprit: RustAutoOpaque::new(IdentifierOpaque(identifier))
-            },
-            _ => DkgRound2Error::General {
-                message: e.to_string()
-            }
-        }
-    )?;
+    let result = dkg::part2(round_1_secret.0.clone(), &commitment_map).map_err(|e| match e {
+        frost::Error::InvalidProofOfKnowledge {
+            culprit: identifier,
+        } => DkgRound2Error::InvalidProofOfKnowledge {
+            culprit: RustAutoOpaque::new(IdentifierOpaque(identifier)),
+        },
+        _ => DkgRound2Error::General {
+            message: e.to_string(),
+        },
+    })?;
 
     // Convert result to DkgPart2Result
-    Ok(
-        (
-            DkgRound2SecretOpaque(result.0),
-            result.1.into_iter().map(
-                |v| DkgRound2IdentifierAndShare {
-                    identifier: RustAutoOpaque::new(IdentifierOpaque(v.0)),
-                    secret: RustAutoOpaque::new(DkgShareToGiveOpaque(v.1))
-                }
-            ).collect()
-        )
-    )
-
-}
-
-#[frb(sync)]
-pub fn share_to_give_from_bytes(
-    bytes: Vec<u8>
-) -> Result<DkgShareToGiveOpaque> {
-    Ok(DkgShareToGiveOpaque(
-        from_bytes(
-            bytes,
-            |b| dkg::round2::Package::deserialize(&b),
-            |obj| obj.serialize(),
-            "Share to give"
-        )?
+    Ok((
+        DkgRound2SecretOpaque(result.0),
+        result
+            .1
+            .into_iter()
+            .map(|v| DkgRound2IdentifierAndShare {
+                identifier: RustAutoOpaque::new(IdentifierOpaque(v.0)),
+                secret: RustAutoOpaque::new(DkgShareToGiveOpaque(v.1)),
+            })
+            .collect(),
     ))
 }
 
 #[frb(sync)]
-pub fn share_to_give_to_bytes(
-    share: &DkgShareToGiveOpaque
-) -> Result<Vec<u8>> {
+pub fn share_to_give_from_bytes(bytes: Vec<u8>) -> Result<DkgShareToGiveOpaque> {
+    Ok(DkgShareToGiveOpaque(from_bytes(
+        bytes,
+        |b| dkg::round2::Package::deserialize(&b),
+        |obj| obj.serialize(),
+        "Share to give",
+    )?))
+}
+
+#[frb(sync)]
+pub fn share_to_give_to_bytes(share: &DkgShareToGiveOpaque) -> Result<Vec<u8>> {
     Ok(share.0.serialize()?)
 }
 
@@ -298,13 +270,10 @@ pub struct IdentifierAndPublicShare {
 
 impl IdentifierAndPublicShare {
     #[frb(sync)]
-    pub fn from_ref(
-        identifier: &IdentifierOpaque,
-        public_share: Vec<u8>,
-    ) -> Self {
+    pub fn from_ref(identifier: &IdentifierOpaque, public_share: Vec<u8>) -> Self {
         Self {
             identifier: RustAutoOpaque::new(identifier.clone()),
-            public_share
+            public_share,
         }
     }
 }
@@ -324,53 +293,50 @@ pub fn dkg_part_3(
     round_1_commitments: Vec<DkgCommitmentForIdentifier>,
     round_2_shares: Vec<DkgRound2IdentifierAndShare>,
 ) -> DkgPart3Result {
-
     // Convert vectors into hashmaps
 
-    let commitment_map = round_1_commitments.into_iter().map(
-        |v| (
-            v.identifier.blocking_read().0.clone(),
-            v.commitment.blocking_read().0.clone()
-        )
-    ).collect();
+    let commitment_map = round_1_commitments
+        .into_iter()
+        .map(|v| {
+            (
+                v.identifier.blocking_read().0.clone(),
+                v.commitment.blocking_read().0.clone(),
+            )
+        })
+        .collect();
 
-    let secrets_map = round_2_shares.into_iter().map(
-        |v| (
-            v.identifier.blocking_read().0.clone(),
-            v.secret.blocking_read().0.clone()
-        )
-    ).collect();
+    let secrets_map = round_2_shares
+        .into_iter()
+        .map(|v| {
+            (
+                v.identifier.blocking_read().0.clone(),
+                v.secret.blocking_read().0.clone(),
+            )
+        })
+        .collect();
 
-    let result = dkg::part3(
-        &round_2_secret.0,
-        &commitment_map,
-        &secrets_map,
-    )?;
+    let result = dkg::part3(&round_2_secret.0, &commitment_map, &secrets_map)?;
 
-    Ok(
-        DkgRound3Data {
-            identifier: RustAutoOpaque::new(IdentifierOpaque(*result.0.identifier())),
-            // Get private share as scalar
-            private_share: result.0.signing_share().serialize(),
-            // Get the group public key
-            group_pk: result.1.verifying_key().serialize()?,
-            // Collect all the identifier public key shares into a vector
-            public_key_shares: result.1.verifying_shares().into_iter().map(
-                |v| -> Result<IdentifierAndPublicShare> {
-                    Ok(
-                        IdentifierAndPublicShare {
-                            identifier: RustAutoOpaque::new(
-                                IdentifierOpaque(*v.0)
-                            ),
-                            public_share: v.1.serialize()?
-                        }
-                    )
-                }
-            ).collect::<Result<Vec<_>>>()?,
-            threshold: *result.0.min_signers(),
-        }
-    )
-
+    Ok(DkgRound3Data {
+        identifier: RustAutoOpaque::new(IdentifierOpaque(*result.0.identifier())),
+        // Get private share as scalar
+        private_share: result.0.signing_share().serialize(),
+        // Get the group public key
+        group_pk: result.1.verifying_key().serialize()?,
+        // Collect all the identifier public key shares into a vector
+        public_key_shares: result
+            .1
+            .verifying_shares()
+            .into_iter()
+            .map(|v| -> Result<IdentifierAndPublicShare> {
+                Ok(IdentifierAndPublicShare {
+                    identifier: RustAutoOpaque::new(IdentifierOpaque(*v.0)),
+                    public_share: v.1.serialize()?,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?,
+        threshold: *result.0.min_signers(),
+    })
 }
 
 // Sign Part 1: Nonce generation
@@ -380,60 +346,42 @@ type SigningCommitmentOpaque = RustOpaque<frost::round1::SigningCommitments>;
 type SignPart1Result = Result<(SigningNoncesOpaque, SigningCommitmentOpaque)>;
 
 #[frb(sync)]
-pub fn sign_part_1(
-    private_share: Vec<u8>
-) -> SignPart1Result {
+pub fn sign_part_1(private_share: Vec<u8>) -> SignPart1Result {
+    let mut rng = frost::rand_core::OsRng;
 
-    let mut rng = thread_rng();
-
-    let (nonces, commitment) = frost::round1::commit(
-        &vector_to_signing_share(private_share)?,
-        &mut rng,
-    );
+    let (nonces, commitment) =
+        frost::round1::commit(&vector_to_signing_share(private_share)?, &mut rng);
 
     Ok((RustOpaque::new(nonces), RustOpaque::new(commitment)))
-
 }
 
 #[frb(sync)]
-pub fn signing_nonces_from_bytes(
-    bytes: Vec<u8>
-) -> Result<SigningNoncesOpaque> {
-    Ok(RustOpaque::new(
-        from_bytes(
-            bytes,
-            |b| frost::round1::SigningNonces::deserialize(&b),
-            |obj| obj.serialize(),
-            "Signing nonces"
-        )?
-    ))
+pub fn signing_nonces_from_bytes(bytes: Vec<u8>) -> Result<SigningNoncesOpaque> {
+    Ok(RustOpaque::new(from_bytes(
+        bytes,
+        |b| frost::round1::SigningNonces::deserialize(&b),
+        |obj| obj.serialize(),
+        "Signing nonces",
+    )?))
 }
 
 #[frb(sync)]
-pub fn signing_nonces_to_bytes(
-    nonces: &SigningNoncesOpaque
-) -> Result<Vec<u8>> {
+pub fn signing_nonces_to_bytes(nonces: &SigningNoncesOpaque) -> Result<Vec<u8>> {
     Ok(nonces.serialize()?)
 }
 
 #[frb(sync)]
-pub fn signing_commitment_from_bytes(
-    bytes: Vec<u8>
-) -> Result<SigningCommitmentOpaque> {
-    Ok(RustOpaque::new(
-        from_bytes(
-            bytes,
-            |b| frost::round1::SigningCommitments::deserialize(&b),
-            |obj| obj.serialize(),
-            "Signing commitment"
-        )?
-    ))
+pub fn signing_commitment_from_bytes(bytes: Vec<u8>) -> Result<SigningCommitmentOpaque> {
+    Ok(RustOpaque::new(from_bytes(
+        bytes,
+        |b| frost::round1::SigningCommitments::deserialize(&b),
+        |obj| obj.serialize(),
+        "Signing commitment",
+    )?))
 }
 
 #[frb(sync)]
-pub fn signing_commitment_to_bytes(
-    commitment: &SigningCommitmentOpaque
-) -> Result<Vec<u8>> {
+pub fn signing_commitment_to_bytes(commitment: &SigningCommitmentOpaque) -> Result<Vec<u8>> {
     Ok(commitment.serialize()?)
 }
 
@@ -447,13 +395,10 @@ pub struct IdentifierAndSigningCommitment {
 
 impl IdentifierAndSigningCommitment {
     #[frb(sync)]
-    pub fn from_refs(
-        identifier: &IdentifierOpaque,
-        commitment: &SigningCommitmentOpaque,
-    ) -> Self {
+    pub fn from_refs(identifier: &IdentifierOpaque, commitment: &SigningCommitmentOpaque) -> Self {
         Self {
             identifier: RustAutoOpaque::new(identifier.clone()),
-            commitment: commitment.clone()
+            commitment: commitment.clone(),
         }
     }
 }
@@ -475,7 +420,6 @@ pub fn sign_part_2(
     group_pk: Vec<u8>,
     threshold: u16,
 ) -> SignPart2Result {
-
     let signing_package = construct_signing_package(nonces_commitments, message);
     let signing_share = vector_to_signing_share(private_share)?;
     let group_verifying_key = vector_to_group_key(group_pk)?;
@@ -488,39 +432,26 @@ pub fn sign_part_2(
         threshold,
     );
 
+    Ok(SignatureShareOpaque(match merkle_root {
+        None => frost::round2::sign(&signing_package, &signing_nonces, &key_package),
+        Some(root) => frost::round2::sign_with_tweak(
+            &signing_package,
+            &signing_nonces,
+            &key_package,
+            Some(root.as_slice()),
+        ),
+    }?))
+}
+
+#[frb(sync)]
+pub fn signature_share_from_bytes(bytes: Vec<u8>) -> Result<SignatureShareOpaque> {
     Ok(SignatureShareOpaque(
-        match merkle_root {
-            None => frost::round2::sign(
-                &signing_package,
-                &signing_nonces,
-                &key_package,
-            ),
-            Some(root) => frost::round2::sign_with_tweak(
-                &signing_package,
-                &signing_nonces,
-                &key_package,
-                Some(root.as_slice()),
-            )
-        }?
+        frost::round2::SignatureShare::deserialize(bytes.as_slice())?,
     ))
-
 }
 
 #[frb(sync)]
-pub fn signature_share_from_bytes(
-    bytes: Vec<u8>
-) -> Result<SignatureShareOpaque> {
-    Ok(
-        SignatureShareOpaque(
-            frost::round2::SignatureShare::deserialize(bytes.as_slice())?
-        )
-    )
-}
-
-#[frb(sync)]
-pub fn signature_share_to_bytes(
-    share: &SignatureShareOpaque
-) -> Vec<u8> {
+pub fn signature_share_to_bytes(share: &SignatureShareOpaque) -> Vec<u8> {
     share.0.serialize().to_vec()
 }
 
@@ -536,7 +467,6 @@ pub fn verify_signature_share(
     public_share: Vec<u8>,
     group_pk: Vec<u8>,
 ) -> Result<()> {
-
     let signing_package = construct_signing_package(nonces_commitments, message);
 
     // Mutable for if a tweak is required
@@ -546,18 +476,21 @@ pub fn verify_signature_share(
     // Introduce tweak here as library doesn't have verify_signature_share_with_tweak
     // Tweak by using a PublicKeyPackage with only the wanted key
     if merkle_root.is_some() {
-
         let pubkey_package = frost::keys::PublicKeyPackage::new(
             BTreeMap::from([(identifier.0.clone(), verifying_share.clone())]),
             group_verifying_key,
+            None,
         );
 
         let tweaked_keys = pubkey_package.tweak(merkle_root);
 
-        verifying_share = tweaked_keys.verifying_shares().first_key_value()
-            .ok_or(anyhow!("Lost verifying key"))?.1.clone();
+        verifying_share = tweaked_keys
+            .verifying_shares()
+            .first_key_value()
+            .ok_or(anyhow!("Lost verifying key"))?
+            .1
+            .clone();
         group_verifying_key = tweaked_keys.verifying_key().clone();
-
     }
 
     frost_core::verify_signature_share(
@@ -566,8 +499,8 @@ pub fn verify_signature_share(
         &share.0,
         &signing_package,
         &group_verifying_key,
-    ).map_err(|e| anyhow!(e.to_string()))
-
+    )
+    .map_err(|e| anyhow!(e.to_string()))
 }
 
 // Final aggregation
@@ -580,21 +513,22 @@ pub struct IdentifierAndSignatureShare {
 
 impl IdentifierAndSignatureShare {
     #[frb(sync)]
-    pub fn from_refs(
-        identifier: &IdentifierOpaque,
-        share: &SignatureShareOpaque,
-    ) -> Self {
+    pub fn from_refs(identifier: &IdentifierOpaque, share: &SignatureShareOpaque) -> Self {
         Self {
             identifier: RustAutoOpaque::new(identifier.clone()),
-            share: RustAutoOpaque::new(share.clone())
+            share: RustAutoOpaque::new(share.clone()),
         }
     }
 }
 
 #[frb(non_opaque)]
 pub enum SignAggregationError {
-    General { message: String },
-    InvalidSignShare { culprit: RustAutoOpaque<IdentifierOpaque> },
+    General {
+        message: String,
+    },
+    InvalidSignShare {
+        culprit: RustAutoOpaque<IdentifierOpaque>,
+    },
 }
 
 #[frb(sync)]
@@ -606,60 +540,72 @@ pub fn aggregate_signature(
     group_pk: Vec<u8>,
     public_shares: Vec<IdentifierAndPublicShare>,
 ) -> Result<Vec<u8>, SignAggregationError> {
-
     let signing_package = construct_signing_package(nonces_commitments, message);
-    let group_verifying_key = vector_to_group_key(group_pk)
-        .map_err(|e| SignAggregationError::General { message: e.to_string() })?;
+    let group_verifying_key =
+        vector_to_group_key(group_pk).map_err(|e| SignAggregationError::General {
+            message: e.to_string(),
+        })?;
 
     let pubkey_package = frost::keys::PublicKeyPackage::new(
-        public_shares.into_iter().try_fold(
-            BTreeMap::new(),
-            |mut acc, v|
-            -> Result<BTreeMap<frost::Identifier, frost::keys::VerifyingShare>> {
-                acc.insert(
-                    v.identifier.blocking_read().0.clone(),
-                    vector_to_verifying_share(v.public_share)?,
-                );
-                Ok(acc)
-            }
-        ).map_err(|e| SignAggregationError::General { message: e.to_string() })?,
+        public_shares
+            .into_iter()
+            .try_fold(
+                BTreeMap::new(),
+                |mut acc, v| -> Result<BTreeMap<frost::Identifier, frost::keys::VerifyingShare>> {
+                    acc.insert(
+                        v.identifier.blocking_read().0.clone(),
+                        vector_to_verifying_share(v.public_share)?,
+                    );
+                    Ok(acc)
+                },
+            )
+            .map_err(|e| SignAggregationError::General {
+                message: e.to_string(),
+            })?,
         group_verifying_key,
+        None,
     );
 
-    let mapped_shares = shares.into_iter().map(
-        |v| (v.identifier.blocking_read().0, v.share.blocking_read().0.clone())
-    ).collect();
+    let mapped_shares = shares
+        .into_iter()
+        .map(|v| {
+            (
+                v.identifier.blocking_read().0,
+                v.share.blocking_read().0.clone(),
+            )
+        })
+        .collect();
 
     let signature = match merkle_root {
-        None => frost::aggregate(
-            &signing_package,
-            &mapped_shares,
-            &pubkey_package,
-        ),
+        None => frost::aggregate(&signing_package, &mapped_shares, &pubkey_package),
         Some(root) => frost::aggregate_with_tweak(
             &signing_package,
             &mapped_shares,
             &pubkey_package,
             Some(root.as_slice()),
         ),
-    }.map_err(
-        |e| match e {
-            frost::Error::InvalidSignatureShare {
-                culprit : identifier
-            } => SignAggregationError::InvalidSignShare {
-                culprit: RustAutoOpaque::new(IdentifierOpaque(identifier))
+    }
+    .map_err(|e| match e {
+        frost::Error::InvalidSignatureShare { culprits } => match culprits.into_iter().next() {
+            Some(identifier) => SignAggregationError::InvalidSignShare {
+                culprit: RustAutoOpaque::new(IdentifierOpaque(identifier)),
             },
-            _ => SignAggregationError::General {
-                message: e.to_string()
-            }
-        }
-    )?;
+            None => SignAggregationError::General {
+                message: "Invalid signature share without a culprit".to_owned(),
+            },
+        },
+        _ => SignAggregationError::General {
+            message: e.to_string(),
+        },
+    })?;
 
-    let bytes = signature.serialize()
-        .map_err(|e| SignAggregationError::General { message: e.to_string() })?;
+    let bytes = signature
+        .serialize()
+        .map_err(|e| SignAggregationError::General {
+            message: e.to_string(),
+        })?;
 
     Ok(bytes.to_vec())
-
 }
 
 // Construction of private key for FROST key
@@ -676,7 +622,6 @@ pub fn construct_private_key(
     group_pk: Vec<u8>,
     threshold: u16,
 ) -> Result<Vec<u8>> {
-
     let casted_threshold = threshold as usize;
 
     if private_shares.len() != casted_threshold {
@@ -685,25 +630,20 @@ pub fn construct_private_key(
 
     let group_verifying_key = vector_to_group_key(group_pk)?;
 
-    let packages = (0..casted_threshold).map(
-        |i| {
-            let signing_share = vector_to_signing_share(
-                private_shares[i].private_share.clone()
-            )?;
-            Ok(
-                frost::keys::KeyPackage::new(
-                    private_shares[i].identifier.blocking_read().0,
-                    signing_share,
-                    signing_share.try_into()?,
-                    group_verifying_key,
-                    threshold,
-                )
-            )
-        }
-    ).collect::<Result<Vec<_>>>()?;
+    let packages = (0..casted_threshold)
+        .map(|i| {
+            let signing_share = vector_to_signing_share(private_shares[i].private_share.clone())?;
+            Ok(frost::keys::KeyPackage::new(
+                private_shares[i].identifier.blocking_read().0,
+                signing_share,
+                signing_share.try_into()?,
+                group_verifying_key,
+                threshold,
+            ))
+        })
+        .collect::<Result<Vec<_>>>()?;
 
     Ok(frost::keys::reconstruct(&packages)?.serialize())
-
 }
 
 // AES-GCM
@@ -720,33 +660,28 @@ fn get_cipher(key: Vec<u8>) -> Result<Aes256Gcm> {
 }
 
 #[frb(sync)]
-pub fn aes_gcm_encrypt(
-    key: Vec<u8>,
-    plaintext: Vec<u8>,
-) -> Result<AesGcmCiphertext> { // Result<AesGcmCiphertext> {
+pub fn aes_gcm_encrypt(key: Vec<u8>, plaintext: Vec<u8>) -> Result<AesGcmCiphertext> {
+    // Result<AesGcmCiphertext> {
 
     let cipher = get_cipher(key)?;
-    let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
-    let data = cipher.encrypt(&nonce, plaintext.as_slice())
+    let nonce = Nonce::generate();
+    let data = cipher
+        .encrypt(&nonce, plaintext.as_slice())
         .map_err(|_| anyhow!("could not encrypt data"))?;
 
-    Ok(AesGcmCiphertext { data, nonce: nonce.as_slice().into() })
-
+    Ok(AesGcmCiphertext {
+        data,
+        nonce: nonce.as_slice().into(),
+    })
 }
 
 #[frb(sync)]
-pub fn aes_gcm_decrypt(
-    key: Vec<u8>,
-    ciphertext: AesGcmCiphertext,
-) -> Result<Vec<u8>> {
-
+pub fn aes_gcm_decrypt(key: Vec<u8>, ciphertext: AesGcmCiphertext) -> Result<Vec<u8>> {
     let cipher = get_cipher(key)?;
-    Ok(
-        cipher.decrypt(
+    Ok(cipher
+        .decrypt(
             ciphertext.nonce.as_slice().try_into()?,
             ciphertext.data.as_slice(),
         )
-        .map_err(|_| anyhow!("Could not decrypt data"))?
-    )
-
+        .map_err(|_| anyhow!("Could not decrypt data"))?)
 }

@@ -1,23 +1,23 @@
 import 'package:frosty/src/identifier.dart';
 import 'package:frosty/src/rust_bindings/rust_api.dart' as rust;
 import 'package:frosty/src/rust_bindings/rust_object_wrapper.dart';
+
 import 'public_commitment.dart';
 
 /// The secret from part 1 of the DKG that is to be kept for part 2. After part
 /// 2 this can be disposed with [dispose()].
-class DkgRound1Secret extends RustObjectWrapper<rust.DkgRound1SecretOpaque> {
-  DkgRound1Secret.fromUnderlying(super._underlying);
-}
+class DkgRound1Secret.fromUnderlying(super._underlying)
+    extends RustObjectWrapper<rust.DkgRound1SecretOpaque>;
 
 /// The first step to generate a distributed FROST key. This contains a secret
 /// and a public commitment, the latter of which is to be shared between all
 /// other participants.
 class DkgPart1 {
-
   /// The secret object that is required for round 2 but must be kept secret by
   /// the participant and shared with no-one else. `secret.dispose()` may
   /// be called once the secret is no longer needed.
   late final DkgRound1Secret secret;
+
   /// The public commitment that must be shared to all other participants
   late final DkgPublicCommitment public;
 
@@ -27,21 +27,20 @@ class DkgPart1 {
   ///
   /// The resulting [public] field contains the commitment to share with all
   /// other participants.
-  DkgPart1({
+  new({
     required Identifier identifier,
     required int threshold,
     required int n,
   }) {
-
     if (n < 2 || n > 0xffff) {
-      throw ArgumentError.value(
-        n, "n", "should be between 2 and 65535",
-      );
+      throw ArgumentError.value(n, "n", "should be between 2 and 65535");
     }
 
     if (threshold < 2 || threshold > n) {
       throw ArgumentError.value(
-        threshold, "threshold", "should be between 2 and $n",
+        threshold,
+        "threshold",
+        "should be between 2 and $n",
       );
     }
 
@@ -53,7 +52,5 @@ class DkgPart1 {
 
     secret = DkgRound1Secret.fromUnderlying(record.$1);
     public = DkgPublicCommitment.fromUnderlying(record.$2);
-
   }
-
 }

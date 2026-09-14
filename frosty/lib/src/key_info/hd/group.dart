@@ -1,34 +1,33 @@
 import 'dart:typed_data';
+
 import 'package:coinlib/coinlib.dart' as cl;
 import 'package:frosty/src/key_info/group.dart';
+
 import 'derivable.dart';
 import 'hd_key_info.dart';
 
 class HDGroupKeyInfo extends GroupKeyInfo implements HDDerivableInfo {
-
   @override
   final HDKeyInfo hdInfo;
 
-  HDGroupKeyInfo({
+  new({
     required super.groupKey,
     required super.threshold,
     required this.hdInfo,
   });
 
-  HDGroupKeyInfo.master({
-    required super.groupKey,
-    required super.threshold,
-  }) : hdInfo = HDKeyInfo.master;
+  new master({required super.groupKey, required super.threshold})
+    : hdInfo = HDKeyInfo.master;
 
-  HDGroupKeyInfo.fromReader(super.reader)
-    : hdInfo = HDKeyInfo.fromReader(reader), super.fromReader();
+  new fromReader(super.reader)
+    : hdInfo = HDKeyInfo.fromReader(reader),
+      super.fromReader();
 
   /// Convenience constructor to construct from serialised [bytes].
-  HDGroupKeyInfo.fromBytes(Uint8List bytes)
-    : this.fromReader(cl.BytesReader(bytes));
+  new fromBytes(Uint8List bytes) : this.fromReader(cl.BytesReader(bytes));
 
   /// Convenience constructor to construct from encoded [hex].
-  HDGroupKeyInfo.fromHex(String hex) : this.fromBytes(cl.hexToBytes(hex));
+  new fromHex(String hex) : this.fromBytes(cl.hexToBytes(hex));
 
   @override
   void write(cl.Writer writer) {
@@ -45,5 +44,4 @@ class HDGroupKeyInfo extends GroupKeyInfo implements HDDerivableInfo {
       hdInfo: newHdInfo,
     );
   }
-
 }

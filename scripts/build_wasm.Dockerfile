@@ -4,4 +4,4 @@ FROM frosty_build_common
 RUN rustup target add wasm32-unknown-unknown
 
 # Provide wasm-bindgen CLI for JS/WASM glue generation
-RUN cargo install wasm-bindgen-cli --version 0.2.106
+RUN cargo install wasm-bindgen-cli --version 0.2.128

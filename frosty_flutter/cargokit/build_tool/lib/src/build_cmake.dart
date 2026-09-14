@@ -1,5 +1,6 @@
 /// This is copied from Cargokit (which is the official way to use it currently)
 /// Details: https://fzyzcjy.github.io/flutter_rust_bridge/manual/integrate/builtin
+library;
 
 import 'dart:io';
 
@@ -14,7 +15,7 @@ import 'target.dart';
 class BuildCMake {
   final CargokitUserOptions userOptions;
 
-  BuildCMake({required this.userOptions});
+  new({required this.userOptions});
 
   Future<void> build() async {
     final targetPlatform = Environment.targetPlatform;
@@ -24,8 +25,10 @@ class BuildCMake {
     }
 
     final environment = BuildEnvironment.fromEnvironment(isAndroid: false);
-    final provider =
-        ArtifactProvider(environment: environment, userOptions: userOptions);
+    final provider = ArtifactProvider(
+      environment: environment,
+      userOptions: userOptions,
+    );
     final artifacts = await provider.getArtifacts([target]);
 
     final libs = artifacts[target]!;

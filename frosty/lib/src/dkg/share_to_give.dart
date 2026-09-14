@@ -1,13 +1,12 @@
 import 'dart:typed_data';
+
 import 'package:frosty/src/helpers/message_exception.dart';
 import 'package:frosty/src/rust_bindings/invalid_object.dart';
 import 'package:frosty/src/rust_bindings/rust_api.dart' as rust;
 import 'package:frosty/src/rust_bindings/rust_object_wrapper.dart';
 
 /// Thrown when bytes are not a valid shared secret
-class InvalidShareToGive extends MessageException {
-  InvalidShareToGive(super.message);
-}
+class InvalidShareToGive(super.message) extends MessageException;
 
 /// A secret share that is to be shared to another participant or a secret share
 /// that was shared from another participant.
@@ -17,24 +16,24 @@ class InvalidShareToGive extends MessageException {
 ///
 /// After this secret has been successfully broadcast to the participant, it
 /// should be disposed with [dispose()].
-class DkgShareToGive extends WritableRustObjectWrapper<rust.DkgShareToGiveOpaque> {
-
-  DkgShareToGive.fromUnderlying(super._underlying);
+class DkgShareToGive
+    extends WritableRustObjectWrapper<rust.DkgShareToGiveOpaque> {
+  new fromUnderlying(super._underlying);
 
   /// Reads the serialised secret from a participant and throws
   /// [InvalidShareToGive] if invalid.
-  DkgShareToGive.fromBytes(Uint8List data) : super(
-    handleGetObject(
-      () => rust.shareToGiveFromBytes(bytes: data),
-      (e) => InvalidShareToGive(e),
-    ),
-    data,
-  );
+  new fromBytes(Uint8List data)
+    : super(
+        handleGetObject(
+          () => rust.shareToGiveFromBytes(bytes: data),
+          (e) => InvalidShareToGive(e),
+        ),
+        data,
+      );
 
   /// Obtains serialised data for the secret that should only be shared to the
   /// recipient participant. Shared secrets must be encrypted and authenticated
   /// and must only be sent to the required recipient.
   @override
   Uint8List serializeImpl() => rust.shareToGiveToBytes(share: underlying);
-
 }
